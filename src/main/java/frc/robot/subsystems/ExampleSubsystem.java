@@ -14,16 +14,16 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class ExampleSubsystem extends SubsystemBase {
 
-  private final CANSparkMax m1 = new CANSparkMax(17, MotorType.kBrushless);
-  private final CANSparkMax m2= new CANSparkMax(1, MotorType.kBrushless);
-  private final XboxController c = new XboxController(0);
-  private final AnalogPotentiometer dist = new AnalogPotentiometer(0);
-  private final Timer timer = new Timer();
-  private boolean running;
+  // private final CANSparkMax m1 = new CANSparkMax(17, MotorType.kBrushless);
+  // private final CANSparkMax m2= new CANSparkMax(1, MotorType.kBrushless);
+  // private final XboxController c = new XboxController(0);
+  // private final AnalogPotentiometer dist = new AnalogPotentiometer(0);
+  // private final Timer timer = new Timer();
+  // private boolean running;
 
   /** Creates a new ExampleSubsystem. */
   public ExampleSubsystem() {
-    m1.restoreFactoryDefaults(); m2.restoreFactoryDefaults();
+    // m1.restoreFactoryDefaults(); m2.restoreFactoryDefaults();
     // m2.follow(m1);
   }
 
@@ -51,20 +51,20 @@ public class ExampleSubsystem extends SubsystemBase {
 
     // 0 furthest, .65 closest
     
-    m1.set(1 - Math.min(1, dist.get() * (1 / .65)));
+    // m1.set(1 - Math.min(1, dist.get() * (1 / .65)));
   }
 
-  private double phasedSpeed(double time)
-  {
-    if(time < 4)
-      return time / 4;
-    if(time < 6)
-      return 1;
-    if(time < 10)
-      return 1 - ((time - 6) / 4);
-    else
-      return 0;
-  }
+  // private double phasedSpeed(double time)
+  // {
+  //   if(time < 4)
+  //     return time / 4;
+  //   if(time < 6)
+  //     return 1;
+  //   if(time < 10)
+  //     return 1 - ((time - 6) / 4);
+  //   else
+  //     return 0;
+  // }
 
   @Override
   public void simulationPeriodic() {
