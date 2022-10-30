@@ -12,38 +12,27 @@ import edu.wpi.first.wpilibj.AnalogPotentiometer;
 import edu.wpi.first.wpilibj.I2C;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
+import util.*;
+
 public class Robot22Subsystem extends SubsystemBase 
 {
-  private enum Robot22State
-  {
-    EMPTY,
-    START_LOADING_FIRST_BALL,
-    ONE_BALL_LOADED,
-    START_LOADING_SECOND_BALL,
-    SECOND_BALL_IN_MOTION,
-    TWO_BALLS_LOADED;
-  }
+  private static final double 
+    IR_MAX = 0.65,
+    SENSOR_TOL = 0.9, // guess, untuned
+    ROLLER_SPEED = 0.5; // guess, untuned
 
-  private final AnalogPotentiometer 
+  private static final int
+    COLOR_MAX = 2047;
+
+  private static final AnalogPotentiometer 
     entrance = new AnalogPotentiometer(0); // ir0 on the diagram
 
-  private final ColorSensorV3
+  private static final ColorSensorV3
     slot0 = new ColorSensorV3(I2C.Port.kMXP); // "slot" used to mean a position where a ball can be stored
 
-  private final TalonSRX
+  private static final TalonSRX
     lowerRoller = new TalonSRX(13),
     upperRoller = new TalonSRX(14);
-
-  private static final double ROLLER_SPEED = 0.5; // guess, untuned
-  private double
-    lowerRollerSpeed,
-    upperRollerSpeed;
-  /**
-   * the current state of internals, mainly where the ball(s) is and whether it is moving
-   * 
-   * grammar
-   */
-  private Robot22State state = Robot22State.EMPTY;
 
   public Robot22Subsystem() 
   {
@@ -52,65 +41,97 @@ public class Robot22Subsystem extends SubsystemBase
     upperRoller.configFactoryDefault();
   }
 
+  private enum Robot22State implements LinearState
+  {
+    EMPTY,
+
+    // first ball has tripped entrance sensor, begin storing it
+    START_LOADING_FIRST_BALL(true, false) 
+    {
+      @Override
+      public boolean transitionCond() { return ballIsAt(entrance); }
+    },
+
+    // ball tripped slot sensor, stored
+    ONE_BALL_LOADED
+    {
+      @Override
+      public boolean transitionCond() { return ballIsAt(slot0); }
+    },
+
+    // new ball tripped entrance sensor while ball already stored, begin moving both
+    START_LOADING_SECOND_BALL(true, true) 
+    {
+      @Override
+      public boolean transitionCond() { return ballIsAt(entrance); }
+    },
+
+    // make sure the old ball is no longer tripping the storage sensor
+    SECOND_BALL_IN_MOTION(true, true) 
+    {
+      @Override
+      public boolean transitionCond() { return !ballIsAt(slot0); }
+    },
+
+    // if a ball trips the sensor, we know it's the new one. both balls are stored
+    TWO_BALLS_LOADED 
+    {
+      @Override
+      public boolean transitionCond() { return ballIsAt(slot0); }
+    };
+
+    private boolean runLowerRoller, runUpperRoller;
+    private Robot22State nextState;
+    private Robot22State() {}
+    private Robot22State(boolean runLowerRoller, boolean runUpperRoller)
+    {
+      this.runLowerRoller = runLowerRoller;
+      this.runUpperRoller = runUpperRoller;
+    }
+
+    public Robot22State getNextState() 
+    { 
+      if(this.ordinal() == Robot22State.values().length - 1) return null; // if on last state
+      if(nextState == null) nextState = Robot22State.values()[this.ordinal() + 1]; // memoize next state
+      return nextState;
+    }
+
+    public Robot22State updateState() { return getNextState() != null && getNextState().transitionCond() ? getNextState() : this; }
+
+    public void run()
+    {
+      lowerRoller.set(ControlMode.PercentOutput, runLowerRoller ? ROLLER_SPEED : 0);
+      upperRoller.set(ControlMode.PercentOutput, runUpperRoller ? ROLLER_SPEED : 0);
+    }
+
+    @Override 
+    public boolean transitionCond() { return false; } // overridden by enum-specific definitions
+  }
+
+  /**
+   * the current state of internals, mainly where the ball(s) is and whether it is moving
+   * 
+   * grammar
+   */
+  private static Robot22State state = Robot22State.EMPTY;
+
   @Override
   public void periodic() 
   {
-    // dont run the motors by default
-    lowerRollerSpeed = 0;
-    upperRollerSpeed = 0;
-
-    switch(state)
-    {
-      case EMPTY:
-        if(ballIsAt(entrance)) // ball entered
-          state = Robot22State.START_LOADING_FIRST_BALL;
-        break;
-
-      case START_LOADING_FIRST_BALL:
-        lowerRollerSpeed = ROLLER_SPEED; // run lower roller
-        if(ballIsAt(slot0)) // 1st ball in place
-          state = Robot22State.ONE_BALL_LOADED;
-        break;
-
-      case ONE_BALL_LOADED:
-        if(ballIsAt(entrance)) // new ball entered
-          state = Robot22State.START_LOADING_SECOND_BALL;
-        break;
-
-      case START_LOADING_SECOND_BALL:
-        lowerRollerSpeed = ROLLER_SPEED; // run both rollers
-        upperRollerSpeed = ROLLER_SPEED;
-        if(!ballIsAt(slot0)) // once we know second ball is out of the way...
-          state = Robot22State.SECOND_BALL_IN_MOTION;
-        break;
-
-      case SECOND_BALL_IN_MOTION:
-        lowerRollerSpeed = ROLLER_SPEED; // continue
-        upperRollerSpeed = ROLLER_SPEED;
-        if(ballIsAt(slot0)) // ...we can safely say that, if a ball reaches this position again, it's the new one. 
-          state = Robot22State.TWO_BALLS_LOADED;
-        break;
-
-      case TWO_BALLS_LOADED:
-        break;
-    }
+    state = state.updateState();
+    state.run();
 
     System.out.println(state.toString());
-
-    lowerRoller.set(ControlMode.PercentOutput, lowerRollerSpeed);
-    upperRoller.set(ControlMode.PercentOutput, upperRollerSpeed);
   }
 
-  private boolean ballIsAt(AnalogPotentiometer p)
+  private static boolean ballIsAt(AnalogPotentiometer p)
   {
     System.out.print(p.get());
-    return p.get() > .55; // guess, untuned
-    // return true;
+    return p.get() > (SENSOR_TOL * IR_MAX); 
   }
-  private boolean ballIsAt(ColorSensorV3 c) 
+  private static boolean ballIsAt(ColorSensorV3 c) 
   {
-    return c.getProximity() > 2000; // guess, untuned
-    // return true;
+    return c.getProximity() > (SENSOR_TOL * COLOR_MAX); 
   } 
 
   @Override
