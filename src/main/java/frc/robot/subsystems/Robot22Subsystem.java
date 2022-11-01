@@ -40,40 +40,57 @@ public class Robot22Subsystem extends SubsystemBase
     lowerRoller.configFactoryDefault();
     upperRoller.configFactoryDefault();
   }
-
+  
+  
+  /**
+   * The current state of internals, mainly where the ball(s) is and whether it is moving
+   */
   private enum Robot22State implements LinearState
   {
+    /**
+     * When there are no balls in the internals and there is nothing to do
+     */
     EMPTY,
 
-    // first ball has tripped entrance sensor, begin storing it
+    /**
+     * When the first ball has tripped entrance sensor, and we should begin storing it
+     */
     START_LOADING_FIRST_BALL(true, false) 
     {
       @Override
       public boolean transitionCond() { return ballIsAt(entrance); }
     },
 
-    // ball tripped slot sensor, stored
+    /** 
+     * When the ball has tripped the slot sensor, and we know it is stored
+     */ 
     ONE_BALL_LOADED
     {
       @Override
       public boolean transitionCond() { return ballIsAt(slot0); }
     },
 
-    // new ball tripped entrance sensor while ball already stored, begin moving both
+    /**
+     * When a new ball trips the entrance sensor, and we should begin moving both
+     */
     START_LOADING_SECOND_BALL(true, true) 
     {
       @Override
       public boolean transitionCond() { return ballIsAt(entrance); }
     },
 
-    // make sure the old ball is no longer tripping the storage sensor
+    /** 
+     * When the old ball has moved out of the way of the slot sensor
+     */ 
     SECOND_BALL_IN_MOTION(true, true) 
     {
       @Override
       public boolean transitionCond() { return !ballIsAt(slot0); }
     },
 
-    // if a ball trips the sensor, we know it's the new one. both balls are stored
+    /**
+     * When the first ball then trips the slot sensor, and we know both balls are stored
+     */
     TWO_BALLS_LOADED 
     {
       @Override
@@ -81,7 +98,6 @@ public class Robot22Subsystem extends SubsystemBase
     };
 
     private boolean runLowerRoller, runUpperRoller;
-    private Robot22State nextState;
     private Robot22State() {}
     private Robot22State(boolean runLowerRoller, boolean runUpperRoller)
     {
@@ -89,15 +105,9 @@ public class Robot22Subsystem extends SubsystemBase
       this.runUpperRoller = runUpperRoller;
     }
 
-    public Robot22State getNextState() 
-    { 
-      if(this.ordinal() == Robot22State.values().length - 1) return null; // if on last state
-      if(nextState == null) nextState = Robot22State.values()[this.ordinal() + 1]; // memoize next state
-      return nextState;
-    }
-
-    public Robot22State updateState() { return getNextState() != null && getNextState().transitionCond() ? getNextState() : this; }
-
+    /**
+     * Run the rollers as configured for this state
+     */
     public void run()
     {
       lowerRoller.set(ControlMode.PercentOutput, runLowerRoller ? ROLLER_SPEED : 0);
@@ -108,25 +118,20 @@ public class Robot22Subsystem extends SubsystemBase
     public boolean transitionCond() { return false; } // overridden by enum-specific definitions
   }
 
-  /**
-   * the current state of internals, mainly where the ball(s) is and whether it is moving
-   * 
-   * grammar
-   */
-  private static Robot22State state = Robot22State.EMPTY;
+  private static PeriodicLinearFSM<Robot22State> stateMachine = new PeriodicLinearFSM<Robot22State>(Robot22State.EMPTY, Robot22State.values());
 
   @Override
   public void periodic() 
   {
-    state = state.updateState();
-    state.run();
+    stateMachine.updateState();
+    stateMachine.getState().run();
 
-    System.out.println(state.toString());
+    System.out.println(stateMachine.getState().toString());
   }
 
   private static boolean ballIsAt(AnalogPotentiometer p)
   {
-    System.out.print(p.get());
+    System.out.print(p.get() + " ");
     return p.get() > (SENSOR_TOL * IR_MAX); 
   }
   private static boolean ballIsAt(ColorSensorV3 c) 
